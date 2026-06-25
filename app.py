@@ -11,13 +11,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2026 북중미 월드컵 본선 주요국 국문 매핑 (실제 참가국 기준 반영)
+# API 영문 국가명을 국문으로 자동 변환하기 위한 매핑 (존재하는 데이터만 변환)
 COUNTRY_MAP = {
     "South Korea": "대한민국", "Korea Republic": "대한민국", "Korea": "대한민국",
-    "USA": "미국", "Mexico": "멕시코", "Canada": "캐나다",
-    "Argentina": "아르헨티나", "France": "프랑스", "잉글랜드": "England",
-    "Spain": "스페인", "Germany": "독일", "Japan": "일본",
-    "Morocco": "모로코", "Uruguay": "우루과이", "Saudi Arabia": "사우디"
+    "Mexico": "멕시코", "Czech Republic": "체코", "Czechia": "체코"
 }
 
 # ----------------------------------------------------
@@ -54,35 +51,13 @@ def calculate_wildcard_rank(df):
 
 
 # ----------------------------------------------------
-# [실시간] API 데이터 로드 함수 (2026 실제 데이터 타겟팅)
+# [순수 실시간] API 데이터 로드 함수 (잘못된 백업 데이터 전면 삭제)
 # ----------------------------------------------------
 @st.cache_data(ttl=60)
 def fetch_realtime_standings():
-    # 2026년 현재 대회 상황을 모사한 현실적인 기본 베이스 데이터
-    mock_all_teams = [
-        # 대한민국이 속한 조 시뮬레이션
-        {"국가": "프랑스", "승점": 6, "골득실": 4, "득점": 5, "남은경기": 1, "조": "A조"},
-        {"국가": "우루과이", "승점": 4, "골득실": 1, "득점": 3, "남은경기": 1, "조": "A조"},
-        {"국가": "대한민국", "승점": 3, "골득실": 0, "득점": 2, "남은경기": 1, "조": "A조"}, 
-        {"국가": "캐나다", "승점": 0, "골득실": -5, "득점": 0, "남은경기": 1, "조": "A조"},
-        
-        # B조 
-        {"국가": "아르헨티나", "승점": 7, "골득실": 5, "득점": 6, "남은경기": 0, "조": "B조"},
-        {"국가": "독일", "승점": 6, "골득실": 2, "득점": 4, "남은경기": 0, "조": "B조"},
-        {"국가": "일본", "승점": 3, "골득실": -1, "득점": 2, "남은경기": 1, "조": "B조"},
-        {"국가": "모로코", "승점": 1, "골득실": -6, "득점": 1, "남은경기": 1, "조": "B조"},
-        
-        # C조
-        {"국가": "스페인", "승점": 4, "골득실": 2, "득점": 3, "남은경기": 1, "조": "C조"},
-        {"국가": "미국", "승점": 3, "골득실": 0, "득점": 2, "남은경기": 1, "조": "C조"},
-        {"국가": "사우디", "승점": 2, "골득실": -1, "득점": 1, "남은경기": 1, "조": "C조"},
-        {"국가": "멕시코", "승점": 1, "골득실": -1, "득점": 1, "남은경기": 1, "조": "C조"},
-    ]
-    
     try:
         API_KEY = st.secrets["API_FOOTBALL_KEY"]
         headers = {"x-apisports-key": API_KEY}
-        # 2026 월드컵 본선 전용 API Endpoint 호출
         url = "https://v3.football.api-sports.io/standings?league=1&season=2026"
         
         response = requests.get(url, headers=headers, timeout=10)
@@ -93,12 +68,19 @@ def fetch_realtime_standings():
             all_teams_data = []
             
             for group_idx, group in enumerate(standings_list):
-                alphabet = chr(65 + group_idx)
+                # API 내부에 조 이름(예: 'Group A')이 있으면 사용, 없으면 알파벳 부여
+                group_name = group[0].get("group", f"{chr(65 + group_idx)}조") if isinstance(group, list) and group else f"{chr(65 + group_idx)}조"
+                
+                # 대한민국이 포함된 조는 직관적으로 표시
+                is_korea_group = any(t.get("team", {}).get("name") in ["South Korea", "Korea Republic"] for t in group)
+                if is_korea_group:
+                    group_name = "대한민국 속한 조"
+                
                 if isinstance(group, list):
                     for team_info in group:
                         team_obj = team_info.get("team", {})
                         eng_name = team_obj.get("name", "Unknown")
-                        kor_name = COUNTRY_MAP.get(eng_name, eng_name)
+                        kor_name = COUNTRY_MAP.get(eng_name, eng_name) # 매핑 있으면 국문, 없으면 영문 그대로 유지
                         
                         played = team_info.get("all", {}).get("played", 2)
                         remaining_games = max(0, 3 - played)
@@ -109,69 +91,67 @@ def fetch_realtime_standings():
                             "골득실": team_info.get("goalsDiff", 0),
                             "득점": team_info.get("all", {}).get("goals", {}).get("for", 0),
                             "남은경기": remaining_games,
-                            "조": f"{alphabet}조"
+                            "조": group_name
                         })
             
             full_df = pd.DataFrame(all_teams_data)
             if not full_df.empty:
                 return full_df
-        
-        return pd.DataFrame(mock_all_teams)
+                
+        return pd.DataFrame() # 데이터가 비어있으면 빈 값 반환
     except Exception as e:
-        return pd.DataFrame(mock_all_teams)
+        return pd.DataFrame()
 
 
 # ====================================================
 # 2. 데이터 연산 프로세스
 # ====================================================
 all_teams_raw = fetch_realtime_standings()
-all_groups_ordered, third_places_raw = process_groups_and_third_places(all_teams_raw)
-wildcard_ranking = calculate_wildcard_rank(third_places_raw)
 
-korea_df = wildcard_ranking[wildcard_ranking["국가"].str.contains("대한민국|Korea", case=False)]
-has_korea_data = not korea_df.empty
+# 데이터가 정상적으로 수집되었을 때만 화면 렌더링 진행
+if not all_teams_raw.empty:
+    all_groups_ordered, third_places_raw = process_groups_and_third_places(all_teams_raw)
+    wildcard_ranking = calculate_wildcard_rank(third_places_raw)
+    korea_df = wildcard_ranking[wildcard_ranking["국가"].str.contains("대한민국|Korea", case=False)]
+    has_korea_data = not korea_df.empty
+else:
+    has_korea_data = False
 
 # ====================================================
 # 3. 메인 대시보드 화면 UI
 # ====================================================
 st.title("⚽ 2026 북중미 월드컵 실시간 32강 와일드카드 계산기")
 
-if has_korea_data:
-    korea = korea_df.iloc[0]
-    col1, col2, col3 = st.columns(3)
-    col1.metric("실시간 와일드카드 순위", f"조 3위 중 {int(korea['순위'])}위")
-    col2.metric("32강 진출 가능성", "✅ 진출 안정권(상위 8개팀)" if korea["순위"] <= 8 else "❌ 탈락 위험군")
-    col3.metric("대한민국 잔여 경기", f"{int(korea['남은경기'])} 경기")
-st.divider()
-
-# 중간 섹션: 와일드카드 순위표
-st.subheader("📊 2026 월드컵 각 조 3위 간 실시간 와일드카드 순위")
-st.dataframe(wildcard_ranking, use_container_width=True)
-
-st.divider()
-
-# 하단 섹션: 2026년 실시간 조별 상황판
-st.subheader("🔍 2026 월드컵 실시간 조별 순위 현황")
-st.caption("※ API 무료 플랜 제한으로 인해 서버가 비어있을 때는 2026년 현재 타겟 시뮬레이션 데이터가 활성화됩니다.")
-
-group_cols = st.columns(3)
-unique_groups = all_groups_ordered["조"].unique()
-
-# 2026년 실제 조별 일정 시나리오 매핑
-real_2026_matches = {
-    "A조": ["🇰🇷 대한민국 vs 🇺🇾 우루과이 (조별리그 최종전)", "🇫🇷 프랑스 vs 🇨🇦 캐나다"],
-    "B조": ["🇯🇵 일본 vs 🇲🇦 모로코 (최종전)", "※ 아르헨티나/독일 조별리그 경기 종료"],
-    "C조": ["🇺🇸 미국 vs 🇲🇽 멕시코 (북중미 더비 최종전)", "🇪🇸 스페인 vs 🇸🇦 사우디"]
-}
-
-for idx, g_name in enumerate(unique_groups):
-    with group_cols[idx % 3]:
-        st.markdown(f"### 📍 {g_name}")
-        g_df = all_groups_ordered[all_groups_ordered["조"] == g_name][["조내순위", "국가", "승점", "골득실", "남은경기"]]
-        st.dataframe(g_df, use_container_width=True, hide_index=True)
+if not all_teams_raw.empty:
+    if has_korea_data:
+        korea = korea_df.iloc[0]
+        col1, col2, col3 = st.columns(3)
+        col1.metric("실시간 와일드카드 순위", f"조 3위 중 {int(korea['순위'])}위")
+        col2.metric("32강 진출 자격", "✅ 진출 안정권" if korea["순위"] <= 8 else "❌ 탈락 위험군")
+        col3.metric("대한민국 잔여 경기", f"{int(korea['남은경기'])} 경기")
+    else:
+        st.success("🎉 대한민국이 현재 조 2위 이상에 위치해 있어 와일드카드 비교 대상이 아닌 '자력 진출 권역'입니다!")
         
-        st.markdown("**📅 조별 잔여 매치업:**")
-        matches = real_2026_matches.get(g_name, ["잔여 경기 로드 중..."])
-        for m in matches:
-            st.write(f"• {m}")
-        st.write("")
+    st.divider()
+
+    # 와일드카드 순위표
+    st.subheader("📊 각 조 3위 간 실시간 와일드카드 순위")
+    st.dataframe(wildcard_ranking, use_container_width=True)
+
+    st.divider()
+
+    # 조별 실시간 상황판 (100% API 기반 자동 노출)
+    st.subheader("🔍 2026 월드컵 실시간 조별 순위 현황")
+    
+    unique_groups = all_groups_ordered["조"].unique()
+    group_cols = st.columns(3)
+    
+    for idx, g_name in enumerate(unique_groups):
+        with group_cols[idx % 3]:
+            st.markdown(f"### 📍 {g_name}")
+            g_df = all_groups_ordered[all_groups_ordered["조"] == g_name][["조내순위", "국가", "승점", "골득실", "남은경기"]]
+            st.dataframe(g_df, use_container_width=True, hide_index=True)
+else:
+    # API 호출이 제한되었을 때 노출할 깔끔한 예외 메시지
+    st.warning("⚠️ 현재 API 서비스(Free 플랜)의 제한으로 인해 월드컵 실시간 데이터를 불러올 수 없습니다.")
+    st.info("💡 요금제 제한이 풀리거나 API가 활성화되면 자동으로 동기화되어 실시간 [대한민국-멕시코-체코] 조 편성 순위가 자동으로 렌더링됩니다.")
