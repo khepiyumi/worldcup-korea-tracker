@@ -1,0 +1,1 @@
+import streamlit as stimport pandas as pdst.set_page_config(    page_title="대한민국 32강 추적기",    layout="wide")st.title("???? 대한민국 32강 진출 추적기")st.info("현재는 테스트 버전입니다.")data = pd.DataFrame(    [        ["대한민국", 3, -1],        ["스코틀랜드", 3, -3],        ["보스니아", 4, -1]    ],    columns=["국가", "승점", "골득실"])st.dataframe(data)
