@@ -1,5 +1,24 @@
 import streamlit as st
 import pandas as pd
+import requests
+
+st.sidebar.title("API 테스트")
+
+if st.sidebar.button("API 연결 확인"):
+
+    API_KEY = st.secrets["API_FOOTBALL_KEY"]
+
+    headers = {
+        "x-apisports-key": API_KEY
+    }
+
+    r = requests.get(
+        "https://v3.football.api-sports.io/status",
+        headers=headers,
+        timeout=30
+    )
+
+    st.write(r.json())
 
 st.set_page_config(
     page_title="대한민국 32강 진출 추적기",
