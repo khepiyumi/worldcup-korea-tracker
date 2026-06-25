@@ -193,4 +193,3 @@ if st.sidebar.button("월드컵 찾기"):
     except Exception as e:
 
         st.error(str(e))    
-)
