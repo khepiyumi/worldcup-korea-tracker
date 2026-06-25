@@ -162,3 +162,17 @@ real_2026_matches = {
     "A조": ["🇰🇷 대한민국 vs 🇺🇾 우루과이 (조별리그 최종전)", "🇫🇷 프랑스 vs 🇨🇦 캐나다"],
     "B조": ["🇯🇵 일본 vs 🇲🇦 모로코 (최종전)", "※ 아르헨티나/독일 조별리그 경기 종료"],
     "C조":
+
+}
+
+for idx, g_name in enumerate(unique_groups):
+    with group_cols[idx % 3]:
+        st.markdown(f"### 📍 {g_name}")
+        g_df = all_groups_ordered[all_groups_ordered["조"] == g_name][["조내순위", "국가", "승점", "골득실", "남은경기"]]
+        st.dataframe(g_df, use_container_width=True, hide_index=True)
+        
+        st.markdown("**📅 조별 잔여 매치업:**")
+        matches = real_2026_matches.get(g_name, ["잔여 경기 로드 중..."])
+        for m in matches:
+            st.write(f"• {m}")
+        st.write("")
