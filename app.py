@@ -59,7 +59,7 @@ def fetch_realtime_standings():
         
         # 2026 북중미 월드컵 리그 ID와 시즌 설정
         # (※ 사이드바의 '월드컵 리그 ID 찾기' 결과로 나온 ID를 1 대신 넣으시면 정확해집니다)
-        url = "https://v3.football.api-sports.io/standings?league=1&season=2026"
+        url = "https://v3.football.api-sports.io/standings?league=8&season=2026"
         
         response = requests.get(url, headers=headers, timeout=15)
         data = response.json()
