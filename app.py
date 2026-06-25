@@ -161,6 +161,35 @@ st.write(
 
     승점: {int(korea['승점'])}
 
+
+    st.sidebar.divider()
+
+st.sidebar.subheader("🔧 API 테스트")
+
+if st.sidebar.button("API 연결 확인"):
+
+    try:
+
+        API_KEY = st.secrets["API_FOOTBALL_KEY"]
+
+        headers = {
+            "x-apisports-key": API_KEY
+        }
+
+        r = requests.get(
+            "https://v3.football.api-sports.io/status",
+            headers=headers,
+            timeout=30
+        )
+
+        st.subheader("API 응답")
+
+        st.json(r.json())
+
+    except Exception as e:
+
+        st.error(str(e))
+
     골득실: {int(korea['골득실'])}
 
     득점: {int(korea['득점'])}
