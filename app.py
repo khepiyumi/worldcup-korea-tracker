@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# 국가명 영문 -> 국문 매핑 딕셔너리 (API 기준 매핑 강화)
+# 국가명 영문 -> 국문 매핑 딕셔너리
 COUNTRY_MAP = {
     "South Korea": "대한민국",
     "Korea Republic": "대한민국",
@@ -48,9 +48,9 @@ def calculate_rank(df):
 
 
 # --------------------
-# [실시간] API 데이터 로드 함수 (진짜 리그 ID '1' 적용 및 유연화)
+# [실시간] API 데이터 로드 함수
 # --------------------
-@st.cache_data(ttl=120)  # 디버깅을 위해 캐시 시간 유지(2분)
+@st.cache_data(ttl=120)  # 2분 캐싱
 def fetch_realtime_standings():
     try:
         API_KEY = st.secrets["API_FOOTBALL_KEY"]
@@ -58,24 +58,22 @@ def fetch_realtime_standings():
             "x-apisports-key": API_KEY
         }
         
-        # [확인 완료] API 검색 결과에 따른 진짜 월드컵 ID '1'과 시즌 '2026' 매핑
+        # 진짜 월드컵 ID '1'과 시즌 '2026' 매핑
         url = "https://v3.football.api-sports.io/standings?league=1&season=2026"
         
         response = requests.get(url, headers=headers, timeout=15)
         data = response.json()
         
-        # 세션 상태에 원본 응답 저장 (사용자 디버깅용 화면 노출 목적)
+        # 디버깅용 데이터 저장
         st.session_state["raw_api_debug"] = data
         
         if "response" not in data or not data["response"]:
             return pd.DataFrame(columns=["국가", "승점", "골득실", "득점"])
             
-        # API-Football의 standings 데이터 접근
         standings_list = data["response"][0].get("league", {}).get("standings", [])
         
         all_teams_data = []
         
-        # API 구조에 따라 3차원 배열 또는 2차원 배열 구조 유연하게 대응
         for group in standings_list:
             if isinstance(group, list):
                 for idx, team_info in enumerate(group):
@@ -90,7 +88,6 @@ def fetch_realtime_standings():
                     goals_stats = all_stats.get("goals", {})
                     goals_for = goals_stats.get("for", 0)
                     
-                    # 조 내부 등수
                     group_rank = team_info.get("rank", idx + 1)
                     
                     all_teams_data.append({
@@ -106,10 +103,9 @@ def fetch_realtime_standings():
         if full_df.empty:
             return full_df
             
-        # 각 조의 3위 팀만 추출 시도
+        # 각 조의 3위 팀만 추출
         third_place_df = full_df[full_df["조내순위"] == 3].copy()
         
-        # 만약 대회 시작 전이거나 3위 필터링이 의미가 없는 임시 상태라면 전체 팀 리스트 반환
         if third_place_df.empty:
             return full_df[["국가", "승점", "골득실", "득점"]]
             
@@ -127,7 +123,6 @@ ranking_raw = fetch_realtime_standings()
 
 if not ranking_raw.empty:
     ranking = calculate_rank(ranking_raw)
-    # 대한민국 또는 영어 표기 호환 검색
     korea_df = ranking[ranking["국가"].str.contains("대한민국|Korea", case=False)]
     
     if not korea_df.empty:
@@ -181,12 +176,11 @@ else:
     
     st.subheader("📊 수집된 실시간 원본 데이터 상태")
     if not ranking_raw.empty:
-        st.write("아래는 현재 API-Football(league=1)에서 추출해낸 국가 목록입니다:")
+        st.write("아래는 현재 API-Football에서 추출해낸 국가 목록입니다:")
         st.dataframe(ranking_raw, use_container_width=True)
     else:
         st.write("API에서 수집된 국가 데이터가 완전히 비어있습니다. 서버에 순위표 데이터가 아직 안 올라왔을 수 있습니다.")
 
-    # [핵심 디버깅 UI] API 응답 구조를 직접 확인하는 토글박스
     with st.expander("🔍 [개발자 모드] API 서버 실제 응답 구조(JSON) 보기"):
         if "raw_api_debug" in st.session_state:
             st.json(st.session_state["raw_api_debug"])
