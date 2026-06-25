@@ -161,12 +161,16 @@ st.write(
 
     승점: {int(korea['승점'])}
 
+    골득실: {int(korea['골득실'])}
 
-    st.sidebar.divider()
+    득점: {int(korea['득점'])}
+    """
+
+st.sidebar.divider()
 
 st.sidebar.subheader("🔧 API 테스트")
 
-if st.sidebar.button("API 연결 확인"):
+if st.sidebar.button("월드컵 찾기"):
 
     try:
 
@@ -177,21 +181,16 @@ if st.sidebar.button("API 연결 확인"):
         }
 
         r = requests.get(
-            "https://v3.football.api-sports.io/status",
+            "https://v3.football.api-sports.io/leagues?search=World Cup",
             headers=headers,
             timeout=30
         )
 
-        st.subheader("API 응답")
+        st.subheader("월드컵 검색 결과")
 
         st.json(r.json())
 
     except Exception as e:
 
-        st.error(str(e))
-
-    골득실: {int(korea['골득실'])}
-
-    득점: {int(korea['득점'])}
-    """
+        st.error(str(e))    
 )
