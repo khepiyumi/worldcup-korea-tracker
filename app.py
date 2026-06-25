@@ -155,7 +155,7 @@ st.info(
 st.subheader("🇰🇷 대한민국 현황")
 
 st.write(
-    f"""
+    """
     현재 대한민국은
     **3위 팀 중 {int(korea['순위'])}위** 입니다.
 
