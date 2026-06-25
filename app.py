@@ -165,7 +165,7 @@ st.write(
 
     득점: {int(korea['득점'])}
     """
-
+    )
 st.sidebar.divider()
 
 st.sidebar.subheader("🔧 API 테스트")
