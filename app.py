@@ -182,7 +182,8 @@ else:
     if not ranking_raw.empty:
         st.dataframe(ranking_raw, use_container_width=True)
     else:
-        st.write("API에서 가져온 데이터가 비어있습니다. 사이드바에서        ascending=False
+        st.write("API에서 가져온 데이터가 비어있습니다. 사이드바에서 리그 ID 및 API연결을 확인해주세요.")
+        ascending=False
     ).reset_index(drop=True)
 
     df["순위"] = df.index + 1
