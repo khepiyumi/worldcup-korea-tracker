@@ -47,9 +47,9 @@ def calculate_rank(df):
 
 
 # --------------------
-# [실시간] API 데이터 로드 함수
+# [실시간] API 데이터 로드 함수 (구조 유연화 버전)
 # --------------------
-@st.cache_data(ttl=300)  # 5분(300초) 동안 캐싱하여 API 호출 횟수 관리
+@st.cache_data(ttl=300)  # 5분(300초) 캐싱
 def fetch_realtime_standings():
     try:
         API_KEY = st.secrets["API_FOOTBALL_KEY"]
@@ -57,47 +57,59 @@ def fetch_realtime_standings():
             "x-apisports-key": API_KEY
         }
         
-        # 2026 북중미 월드컵 리그 ID와 시즌 설정
-        # (※ 사이드바의 '월드컵 리그 ID 찾기' 결과로 나온 ID를 1 대신 넣으시면 정확해집니다)
+        # 사용자가 수정한 league=8 적용
         url = "https://v3.football.api-sports.io/standings?league=8&season=2026"
         
         response = requests.get(url, headers=headers, timeout=15)
         data = response.json()
         
-        # 응답 데이터 구조가 유효한지 먼저 체크
         if "response" not in data or not data["response"]:
             return pd.DataFrame(columns=["국가", "승점", "골득실", "득점"])
             
         standings_list = data["response"][0].get("league", {}).get("standings", [])
         
-        raw_data = []
+        all_teams_data = []
         
-        # 각 조(Group)를 순회하며 데이터 수집
+        # 각 조(Group)를 순회하며 일단 '모든 팀'을 수집합니다.
         for group in standings_list:
-            # group이 리스트 형태이고, 조 3위(인덱스 2) 데이터가 실제로 존재하는지 체크
-            if isinstance(group, list) and len(group) >= 3:
-                team_info = group[2]  # 조 3위 팀 정보 안전하게 타깃팅
-                
-                # 안전하게 딕셔너리 내부 값 탐색
-                team_obj = team_info.get("team", {})
-                eng_name = team_obj.get("name", "Unknown")
-                kor_name = COUNTRY_MAP.get(eng_name, eng_name)
-                
-                points = team_info.get("points", 0)
-                goals_diff = team_info.get("goalsDiff", 0)
-                
-                # 득점 데이터 계층 안전하게 탐색
-                all_stats = team_info.get("all", {})
-                goals_stats = all_stats.get("goals", {})
-                goals_for = goals_stats.get("for", 0)
-                
-                raw_data.append([kor_name, points, goals_diff, goals_for])
-            else:
-                continue
-                
-        # 데이터프레임 생성
-        df = pd.DataFrame(raw_data, columns=["국가", "승점", "골득실", "득점"])
-        return df
+            if isinstance(group, list):
+                for idx, team_info in enumerate(group):
+                    team_obj = team_info.get("team", {})
+                    eng_name = team_obj.get("name", "Unknown")
+                    kor_name = COUNTRY_MAP.get(eng_name, eng_name)
+                    
+                    points = team_info.get("points", 0)
+                    goals_diff = team_info.get("goalsDiff", 0)
+                    
+                    all_stats = team_info.get("all", {})
+                    goals_stats = all_stats.get("goals", {})
+                    goals_for = goals_stats.get("for", 0)
+                    
+                    # 조 내부에서의 실제 순위 기록 (idx + 1)
+                    group_rank = idx + 1
+                    
+                    all_teams_data.append({
+                        "국가": kor_name,
+                        "승점": points,
+                        "골득실": goals_diff,
+                        "득점": goals_for,
+                        "조내순위": group_rank
+                    })
+                    
+        full_df = pd.DataFrame(all_teams_data)
+        
+        if full_df.empty:
+            return full_df
+            
+        # [핵심 변경] 각 조의 '3위' 팀들만 필터링하여 와일드카드 경쟁 셋을 만듭니다.
+        # 만약 대회 데이터 초기화 상태여서 팀들이 모두 3위 판정이 안 뜨면 전체를 우선 반환하게 예외처리합니다.
+        third_place_df = full_df[full_df["조내순위"] == 3].copy()
+        
+        if third_place_df.empty:
+            # 아직 데이터가 부족해 조별 3위 타깃팅이 안 되면 그냥 수집된 전체 팀 목록이라도 보냅니다.
+            return full_df[["국가", "승점", "골득실", "득점"]]
+            
+        return third_place_df[["국가", "승점", "골득실", "득점"]]
 
     except Exception as e:
         st.sidebar.error(f"실시간 데이터 파싱 중 에러 발생: {e}")
@@ -107,10 +119,8 @@ def fetch_realtime_standings():
 # ====================================================
 # 2. 데이터 처리 메인 로직
 # ====================================================
-# API 데이터 호출
 ranking_raw = fetch_realtime_standings()
 
-# 순위 계산 및 대한민국 데이터 필터링
 if not ranking_raw.empty:
     ranking = calculate_rank(ranking_raw)
     korea_df = ranking[ranking["국가"].str.contains("대한민국|Korea", case=False)]
@@ -131,22 +141,15 @@ else:
 st.title("🇰🇷 대한민국 32강 진출 추적기")
 
 if has_korea_data:
-    # --------------------
-    # 상단 요약 (Metric)
-    # --------------------
     col1, col2, col3 = st.columns(3)
     col1.metric("현재 순위", f"조 3위 중 {int(korea['순위'])}위")
     col2.metric("진출 여부", "✅ 진출권" if korea["순위"] <= 8 else "❌ 탈락권")
 
-    # 순위별 진출 확률 가이드 맵
     probability = {1:99, 2:97, 3:94, 4:90, 5:82, 6:72, 7:60, 8:51, 9:35, 10:20, 11:8, 12:1}
     col3.metric("예상 진출확률", f"{probability.get(int(korea['순위']), 0)}%")
 
     st.divider()
 
-    # --------------------
-    # 본문 영역 (좌측: 순위표 / 우측: 상태 및 조건)
-    # --------------------
     left_col, right_col = st.columns([3, 2])
 
     with left_col:
@@ -168,40 +171,27 @@ if has_korea_data:
         st.subheader("📣 오늘 대한민국 응원팀")
         st.success("🇲🇦 모로코 (경쟁국 상대팀)")
         st.success("🇪🇸 스페인")
-
-        st.subheader("🎯 진출 조건")
-        st.info(
-            """
-            대한민국보다 아래 순위 팀들이 승점을 획득하지 못할수록 유리합니다.
-            특히 경쟁 관계에 있는 타 조의 결과들을 주목하세요.
-            """
-        )
 else:
-    # 데이터가 비어있거나 한국이 없을 때 노출되는 안전 화면
-    st.info("💡 현재 API 응답에 조별리그 데이터가 없거나 경기가 시작되지 않아 대한민국 정보를 추출할 수 없습니다.")
+    st.info("💡 현재 API 응답에 조별리그 전체 순위 정보가 로드 중이거나 대한민국이 아직 3위에 매핑되지 않았습니다.")
     
     st.subheader("📊 수집된 실시간 원본 데이터 상태")
     if not ranking_raw.empty:
+        st.write("아래는 현재 API-Football(league=8)에서 받아오는 데 성공한 국가 목록입니다:")
         st.dataframe(ranking_raw, use_container_width=True)
     else:
-        st.write("API에서 가져온 데이터가 비어있습니다. 사이드바에서 리그 ID 및 API 연결을 확인해주세요.")
+        st.write("API에서 가져온 데이터가 완전한 공백 상태입니다. 사이드바에서 [API 연결 확인] 단추를 눌러 에러 메시지가 뜨는지 보세요.")
 
 
 # ====================================================
-# 4. 사이드바 UI (디버깅 및 테스트 툴 모음)
+# 4. 사이드바 UI
 # ====================================================
 st.sidebar.title("🔧 API 관리 및 테스트")
 
-# 첫 번째 테스트 버튼: API 상태 확인
 if st.sidebar.button("API 연결 확인"):
     try:
         API_KEY = st.secrets["API_FOOTBALL_KEY"]
         headers = {"x-apisports-key": API_KEY}
-        r = requests.get(
-            "https://v3.football.api-sports.io/status",
-            headers=headers,
-            timeout=10
-        )
+        r = requests.get("https://v3.football.api-sports.io/status", headers=headers, timeout=10)
         st.sidebar.subheader("연결 상태 결과")
         st.sidebar.json(r.json())
     except Exception as e:
@@ -209,16 +199,11 @@ if st.sidebar.button("API 연결 확인"):
 
 st.sidebar.divider()
 
-# 두 번째 테스트 버튼: 정확한 월드컵 대회 리그 ID 조회용
 if st.sidebar.button("월드컵 리그 ID 찾기"):
     try:
         API_KEY = st.secrets["API_FOOTBALL_KEY"]
         headers = {"x-apisports-key": API_KEY}
-        r = requests.get(
-            "https://v3.football.api-sports.io/leagues?search=World Cup",
-            headers=headers,
-            timeout=10
-        )
+        r = requests.get("https://v3.football.api-sports.io/leagues?search=World Cup", headers=headers, timeout=10)
         st.sidebar.subheader("월드컵 검색 결과")
         st.sidebar.json(r.json())
     except Exception as e:
